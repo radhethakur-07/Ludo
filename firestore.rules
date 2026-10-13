@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Duo Ludo Rooms Collection
+    match /rooms/{roomCode} {
+      // 1. Read: Any anonymously authenticated player can read room state
+      allow read: if request.auth != null;
+
+      // 2. Create: Only authenticated user creating as host with initial waiting state
+      allow create: if request.auth != null
+                    && request.resource.data.host.uid == request.auth.uid
+                    && request.resource.data.status == 'waitingForOpponent'
+                    && request.resource.data.opponent == null;
+
+      // 3. Update: Strict validation based on action
+      allow update: if request.auth != null && (
+        // A. Opponent joining empty slot
+        (
+          resource.data.opponent == null &&
+          request.resource.data.opponent.uid == request.auth.uid &&
+          request.resource.data.status == 'inProgress'
+        ) ||
+        // B. Current turn player submitting roll/move
+        (
+          (resource.data.engine.currentTurn == 'red' && request.auth.uid == resource.data.host.uid) ||
+          (resource.data.engine.currentTurn == 'green' && request.auth.uid == resource.data.opponent.uid)
+        ) ||
+        // C. Participant requesting rematch
+        (
+          resource.data.status == 'completed' &&
+          (request.auth.uid == resource.data.host.uid || request.auth.uid == resource.data.opponent.uid)
+        ) ||
+        // D. Participant leaving / forfeiting
+        (
+          request.resource.data.status == 'abandoned' &&
+          (request.auth.uid == resource.data.host.uid || request.auth.uid == resource.data.opponent.uid)
+        )
+      );
+
+      // 4. Delete: Prevent client room deletions
+      allow delete: if false;
+    }
+  }
+}
