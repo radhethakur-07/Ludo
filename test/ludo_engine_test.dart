@@ -285,5 +285,41 @@ void main() {
       expect(restored.getToken(PlayerColor.red, 0).stepCount, 5);
       expect(restored.activePlayers, engine.activePlayers);
     });
+
+    test('Token reaching home awards an extra turn with reason reachedHome', () {
+      // Place Red token #0 on runway step 54 (needs 2 steps to reach 56 home)
+      engine.tokens[PlayerColor.red]![0] = const LudoToken(
+        id: 0,
+        owner: PlayerColor.red,
+        stepCount: 54,
+      );
+
+      engine.rollDice(fixedRoll: 2);
+      final result = engine.moveToken(0);
+
+      expect(result.toStep, LudoConstants.stepHomeFinished);
+      expect(result.movedToken.isFinished, isTrue);
+      expect(result.extraTurnGranted, isTrue);
+      expect(result.extraTurnReason, ExtraTurnReason.reachedHome);
+      // Turn stays with Red
+      expect(engine.currentTurn, PlayerColor.red);
+      expect(engine.turnPhase, TurnPhase.waitingForRoll);
+    });
+
+    test('Winning move with all 4 tokens finished ends game and does not award extra turn', () {
+      // 3 tokens already home, 4th at 55
+      engine.tokens[PlayerColor.red]![0] = const LudoToken(id: 0, owner: PlayerColor.red, stepCount: 56);
+      engine.tokens[PlayerColor.red]![1] = const LudoToken(id: 1, owner: PlayerColor.red, stepCount: 56);
+      engine.tokens[PlayerColor.red]![2] = const LudoToken(id: 2, owner: PlayerColor.red, stepCount: 56);
+      engine.tokens[PlayerColor.red]![3] = const LudoToken(id: 3, owner: PlayerColor.red, stepCount: 55);
+
+      engine.rollDice(fixedRoll: 1);
+      final result = engine.moveToken(3);
+
+      expect(result.gameWon, isTrue);
+      expect(result.extraTurnGranted, isFalse);
+      expect(engine.status, GameStatus.completed);
+      expect(engine.winner, PlayerColor.red);
+    });
   });
 }

@@ -200,6 +200,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     'Rolling a 6 grants an extra turn (max 3 in a row).',
                   ),
                   _buildRuleRow(
+                    '🏠 Bonus Roll on Home',
+                    'Moving a token into the final center triangle awards a bonus roll!',
+                  ),
+                  _buildRuleRow(
                     '🎯 Exact Roll for Home',
                     'Tokens must roll the exact number required to enter the center triangle.',
                   ),

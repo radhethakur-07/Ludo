@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:duo_ludo/engine/ludo_models.dart';
+import 'package:duo_ludo/services/firebase_service.dart';
 import 'package:duo_ludo/services/room_service.dart';
 import 'package:duo_ludo/ui/screens/game_screen.dart';
 import 'package:duo_ludo/ui/theme/app_theme.dart';
@@ -24,6 +25,7 @@ class LobbyScreen extends StatefulWidget {
 
 class _LobbyScreenState extends State<LobbyScreen> {
   final RoomService _roomService = RoomService();
+  final FirebaseService _firebaseService = FirebaseService();
   StreamSubscription<RoomModel?>? _sub;
   RoomModel? _currentRoom;
 
@@ -177,20 +179,51 @@ class _LobbyScreenState extends State<LobbyScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-
-              // Player 1 (Host - Red)
+              // Player 1 (Host)
               _buildPlayerCard(
                 name: room?.host.displayName ?? 'Host Player',
-                colorName: 'Red',
-                color: AppTheme.redPrimary,
+                colorName: room?.host.color.displayName ?? 'Red',
+                color: room?.host.color.primaryColor ?? AppTheme.redPrimary,
                 isReady: true,
                 badgeText: 'HOST',
               ),
               const SizedBox(height: 14),
 
-              // Player 2 (Green) - Waiting state
-              _buildWaitingPlayerCard(),
+              // Player 2 (Opponent)
+              if (room?.opponent != null)
+                _buildPlayerCard(
+                  name: room!.opponent!.displayName,
+                  colorName: room.opponent!.color.displayName,
+                  color: room.opponent!.color.primaryColor,
+                  isReady: true,
+                  badgeText: 'OPPONENT',
+                )
+              else
+                _buildWaitingPlayerCard(),
+
+              const SizedBox(height: 24),
+
+              // Choose Your Token Color Section
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  children: [
+                    const Icon(Icons.palette_outlined, color: AppTheme.gold, size: 16),
+                    const SizedBox(width: 8),
+                    Text(
+                      'CHOOSE YOUR COLOR',
+                      style: TextStyle(
+                        color: AppTheme.textMuted.withOpacity(0.9),
+                        fontSize: 12,
+                        letterSpacing: 1.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildColorSelector(room),
 
               const Spacer(),
 
@@ -339,6 +372,116 @@ class _LobbyScreenState extends State<LobbyScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildColorSelector(RoomModel? room) {
+    final myUid = _firebaseService.currentUserId;
+    final isMeHost = widget.isHost || (room?.host.uid == myUid);
+    final myCurrentColor = isMeHost
+        ? (room?.host.color ?? PlayerColor.red)
+        : (room?.opponent?.color ?? PlayerColor.green);
+    final opponentColor = isMeHost ? room?.opponent?.color : room?.host.color;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: PlayerColor.values.map((color) {
+        final isSelectedByMe = color == myCurrentColor;
+        final isTakenByOther = color == opponentColor;
+
+        return GestureDetector(
+          onTap: () async {
+            if (isSelectedByMe) return;
+            if (isTakenByOther) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                      '${color.displayName} is already reserved by another player!'),
+                  backgroundColor: AppTheme.surfaceCard,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+              return;
+            }
+
+            try {
+              await _roomService.selectPlayerColor(
+                roomCode: widget.roomCode,
+                playerUid: myUid,
+                newColor: color,
+              );
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(e.toString().replaceAll('Exception: ', '')),
+                    backgroundColor: AppTheme.surfaceCard,
+                  ),
+                );
+              }
+            }
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isSelectedByMe
+                    ? Colors.white
+                    : (isTakenByOther
+                        ? Colors.transparent
+                        : color.primaryColor.withOpacity(0.4)),
+                width: isSelectedByMe ? 3 : 1.5,
+              ),
+              boxShadow: isSelectedByMe
+                  ? [
+                      BoxShadow(
+                        color: color.primaryColor.withOpacity(0.55),
+                        blurRadius: 12,
+                        spreadRadius: 2,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Opacity(
+              opacity: isTakenByOther ? 0.35 : 1.0,
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: color.primaryColor,
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    center: const Alignment(-0.3, -0.4),
+                    radius: 0.8,
+                    colors: [
+                      color.lightColor,
+                      color.primaryColor,
+                      color.darkColor,
+                    ],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: isSelectedByMe
+                      ? const Icon(Icons.check, color: Colors.white, size: 24)
+                      : (isTakenByOther
+                          ? const Icon(Icons.lock,
+                              color: Colors.white70, size: 18)
+                          : null),
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }

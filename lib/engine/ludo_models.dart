@@ -185,7 +185,45 @@ enum TurnPhase {
 enum ExtraTurnReason {
   rolledSix,
   capturedOpponent,
+  reachedHome,
   none,
+}
+
+/// Realtime player emoji reaction.
+class GameReaction {
+  final String senderUid;
+  final String senderName;
+  final PlayerColor senderColor;
+  final String emoji;
+  final int timestamp;
+
+  const GameReaction({
+    required this.senderUid,
+    required this.senderName,
+    required this.senderColor,
+    required this.emoji,
+    required this.timestamp,
+  });
+
+  Map<String, dynamic> toMap() => {
+        'senderUid': senderUid,
+        'senderName': senderName,
+        'senderColor': senderColor.name,
+        'emoji': emoji,
+        'timestamp': timestamp,
+      };
+
+  factory GameReaction.fromMap(Map<String, dynamic> map) => GameReaction(
+        senderUid: map['senderUid'] as String? ?? '',
+        senderName: map['senderName'] as String? ?? 'Player',
+        senderColor: PlayerColor.values.firstWhere(
+          (c) => c.name == map['senderColor'],
+          orElse: () => PlayerColor.red,
+        ),
+        emoji: map['emoji'] as String? ?? '🎲',
+        timestamp:
+            map['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch,
+      );
 }
 
 /// Result details of executing a token move.
@@ -258,13 +296,14 @@ class PlayerProfile {
 
   PlayerProfile copyWith({
     String? displayName,
+    PlayerColor? color,
     bool? isConnected,
     bool? isHost,
   }) {
     return PlayerProfile(
       uid: uid,
       displayName: displayName ?? this.displayName,
-      color: color,
+      color: color ?? this.color,
       isConnected: isConnected ?? this.isConnected,
       isHost: isHost ?? this.isHost,
     );

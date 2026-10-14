@@ -127,5 +127,60 @@ void main() {
       expect(room.engine.getFinishedCount(PlayerColor.green), 0);
       expect(room.engine.tokens[PlayerColor.red]!.every((t) => t.isAtYard), isTrue);
     });
+
+    test('Color selection reserves color before match and rejects already taken color', () async {
+      final code = await roomService.createRoom(
+        hostName: 'Alice',
+        hostUid: 'alice_123',
+      );
+
+      // Host switches from Red to Yellow before opponent joins
+      await roomService.selectPlayerColor(
+        roomCode: code,
+        playerUid: 'alice_123',
+        newColor: PlayerColor.yellow,
+      );
+
+      final room1 = await roomService.streamRoom(code).first;
+      expect(room1!.host.color, PlayerColor.yellow);
+
+      // Bob joins
+      await roomService.joinRoom(
+        roomCode: code,
+        guestName: 'Bob',
+        guestUid: 'bob_456',
+      );
+
+      // Attempting to change color once match is inProgress throws exception
+      expect(
+        () => roomService.selectPlayerColor(
+          roomCode: code,
+          playerUid: 'bob_456',
+          newColor: PlayerColor.blue,
+        ),
+        throwsA(isA<Exception>()),
+      );
+    });
+
+    test('Realtime emoji reactions update room state', () async {
+      final code = await roomService.createRoom(
+        hostName: 'Alice',
+        hostUid: 'alice_123',
+      );
+
+      await roomService.sendReaction(
+        roomCode: code,
+        playerUid: 'alice_123',
+        playerName: 'Alice',
+        playerColor: PlayerColor.red,
+        emoji: '🔥',
+      );
+
+      final room = await roomService.streamRoom(code).first;
+      expect(room!.latestReaction, isNotNull);
+      expect(room.latestReaction!.emoji, '🔥');
+      expect(room.latestReaction!.senderUid, 'alice_123');
+      expect(room.latestReaction!.senderColor, PlayerColor.red);
+    });
   });
 }

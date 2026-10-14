@@ -76,13 +76,14 @@ class LudoEngine {
   /// Create a fresh new game instance with selectable active players (2, 3, or 4 players).
   factory LudoEngine.newGame({
     List<PlayerColor>? activePlayers,
+    PlayerColor? initialTurn,
     Random? random,
   }) {
     final players = activePlayers ?? [PlayerColor.red, PlayerColor.green];
     return LudoEngine(
       random: random,
       activePlayers: players,
-      initialTurn: players.first,
+      initialTurn: initialTurn ?? players.first,
       initialStatus: GameStatus.inProgress,
       turnPhase: TurnPhase.waitingForRoll,
     );
@@ -261,28 +262,40 @@ class LudoEngine {
       );
     }
 
-    // Determine extra turn:
-    // 1. Captured an opponent's token
-    // 2. Rolled a 6 (and consecutiveSixes < 3)
+    // Determine extra turn according to classic Ludo rules:
+    // Precedence Order:
+    // 1. Reaching Home: Escorting a token into the final home center grants an immediate bonus roll!
+    // 2. Capturing Opponent: Landing on an enemy piece returns it to yard and awards a bonus roll!
+    // 3. Rolling a 6: Rolling a six grants an extra roll, provided the 3-consecutive-sixes limit was not exceeded.
     bool extraTurnGranted = false;
     ExtraTurnReason reason = ExtraTurnReason.none;
 
-    if (capturedToken != null) {
+    if (updatedToken.isFinished) {
+      extraTurnGranted = true;
+      reason = ExtraTurnReason.reachedHome;
+      moveLog.add(
+        '🎯 ${currentTurn.displayName} reached HOME with token #${updatedToken.id + 1}! Bonus roll awarded!',
+      );
+    } else if (capturedToken != null) {
       extraTurnGranted = true;
       reason = ExtraTurnReason.capturedOpponent;
-      moveLog.add('${currentTurn.displayName} earned a bonus roll for capturing!');
+      moveLog.add(
+        '⚔️ ${currentTurn.displayName} captured an opponent! Bonus roll awarded!',
+      );
     } else if (currentDiceRoll == 6 &&
         consecutiveSixes < LudoConstants.maxConsecutiveSixes) {
       extraTurnGranted = true;
       reason = ExtraTurnReason.rolledSix;
-      moveLog.add('${currentTurn.displayName} earned an extra roll for rolling 6!');
+      moveLog.add(
+        '🎲 ${currentTurn.displayName} rolled a 6! Extra roll awarded!',
+      );
     }
 
     currentDiceRoll = null;
 
     if (extraTurnGranted) {
       turnPhase = TurnPhase.waitingForRoll;
-      // currentTurn remains the same
+      // currentTurn remains the same for the bonus roll
     } else {
       _passTurn();
     }

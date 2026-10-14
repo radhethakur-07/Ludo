@@ -16,6 +16,8 @@ class RoomModel {
   final DateTime createdAt;
   final DateTime lastActive;
   final String? rematchRequestedBy;
+  final int playerCount;
+  final GameReaction? latestReaction;
 
   const RoomModel({
     required this.roomCode,
@@ -26,6 +28,8 @@ class RoomModel {
     required this.createdAt,
     required this.lastActive,
     this.rematchRequestedBy,
+    this.playerCount = 2,
+    this.latestReaction,
   });
 
   bool get isFull => opponent != null;
@@ -40,6 +44,8 @@ class RoomModel {
       'createdAt': createdAt.millisecondsSinceEpoch,
       'lastActive': lastActive.millisecondsSinceEpoch,
       'rematchRequestedBy': rematchRequestedBy,
+      'playerCount': playerCount,
+      'latestReaction': latestReaction?.toMap(),
     };
   }
 
@@ -58,6 +64,7 @@ class RoomModel {
     final lastActive = DateTime.fromMillisecondsSinceEpoch(
       map['lastActive'] as int? ?? DateTime.now().millisecondsSinceEpoch,
     );
+    final reactionMap = map['latestReaction'] as Map<String, dynamic>?;
 
     return RoomModel(
       roomCode: map['roomCode'] as String,
@@ -68,6 +75,9 @@ class RoomModel {
       createdAt: createdAt,
       lastActive: lastActive,
       rematchRequestedBy: map['rematchRequestedBy'] as String?,
+      playerCount: map['playerCount'] as int? ?? 2,
+      latestReaction:
+          reactionMap != null ? GameReaction.fromMap(reactionMap) : null,
     );
   }
 }
@@ -172,27 +182,39 @@ class RoomService {
           throw Exception('This room is already full (2 players are in match).');
         }
 
-        // Join as opponent (Green)
+        // Pick an available default color that the host hasn't chosen
+        final availableColor = PlayerColor.values.firstWhere(
+          (c) => c != room.host.color,
+          orElse: () => room.host.color.opposite,
+        );
         final opponentProfile = PlayerProfile(
           uid: guestUid,
           displayName: guestName,
-          color: PlayerColor.green,
+          color: availableColor,
           isConnected: true,
           isHost: false,
+        );
+
+        final active = [room.host.color, opponentProfile.color];
+        final updatedEngine = LudoEngine.newGame(
+          activePlayers: active,
+          initialTurn: room.host.color,
         );
 
         final updatedRoom = RoomModel(
           roomCode: code,
           host: room.host,
           opponent: opponentProfile,
-          engine: room.engine,
+          engine: updatedEngine,
           status: GameStatus.inProgress,
           createdAt: room.createdAt,
           lastActive: DateTime.now(),
+          playerCount: room.playerCount,
         );
 
         await docRef.update({
           'opponent': opponentProfile.toMap(),
+          'engine': updatedEngine.toMap(),
           'status': GameStatus.inProgress.name,
           'lastActive': DateTime.now().millisecondsSinceEpoch,
         });
@@ -218,22 +240,33 @@ class RoomService {
       throw Exception('This room is already full.');
     }
 
+    final availableColor = PlayerColor.values.firstWhere(
+      (c) => c != mockRoom.host.color,
+      orElse: () => mockRoom.host.color.opposite,
+    );
     final opponentProfile = PlayerProfile(
       uid: guestUid,
       displayName: guestName,
-      color: PlayerColor.green,
+      color: availableColor,
       isConnected: true,
       isHost: false,
+    );
+
+    final active = [mockRoom.host.color, opponentProfile.color];
+    final updatedEngine = LudoEngine.newGame(
+      activePlayers: active,
+      initialTurn: mockRoom.host.color,
     );
 
     final updatedRoom = RoomModel(
       roomCode: code,
       host: mockRoom.host,
       opponent: opponentProfile,
-      engine: mockRoom.engine,
+      engine: updatedEngine,
       status: GameStatus.inProgress,
       createdAt: mockRoom.createdAt,
       lastActive: DateTime.now(),
+      playerCount: mockRoom.playerCount,
     );
 
     _mockRooms[code] = updatedRoom;
@@ -277,8 +310,8 @@ class RoomService {
         final room = RoomModel.fromMap(snap.data()!);
         final engine = room.engine;
 
-        // Verify it is the current player's turn
-        final isHostTurn = engine.currentTurn == PlayerColor.red;
+        // Verify it is the current player's turn based on actual player colors
+        final isHostTurn = engine.currentTurn == room.host.color;
         final expectedUid = isHostTurn ? room.host.uid : room.opponent?.uid;
 
         if (expectedUid != playerUid) {
@@ -322,7 +355,7 @@ class RoomService {
         final room = RoomModel.fromMap(snap.data()!);
         final engine = room.engine;
 
-        final isHostTurn = engine.currentTurn == PlayerColor.red;
+        final isHostTurn = engine.currentTurn == room.host.color;
         final expectedUid = isHostTurn ? room.host.uid : room.opponent?.uid;
 
         if (expectedUid != playerUid) {
@@ -347,6 +380,147 @@ class RoomService {
       room.engine.moveToken(tokenId);
       _mockRooms[code] = room;
       _getMockController(code).add(room);
+    }
+  }
+
+  /// Select/reserve a token color before match begins with conflict prevention.
+  Future<void> selectPlayerColor({
+    required String roomCode,
+    required String playerUid,
+    required PlayerColor newColor,
+  }) async {
+    final code = roomCode.trim().toUpperCase();
+
+    if (FirebaseService().isFirebaseAvailable) {
+      final docRef = _firestore!.collection('rooms').doc(code);
+      await _firestore!.runTransaction((tx) async {
+        final snap = await tx.get(docRef);
+        if (!snap.exists) throw Exception('Room not found');
+
+        final room = RoomModel.fromMap(snap.data()!);
+        if (room.status == GameStatus.inProgress) {
+          throw Exception('Cannot change color once match has started.');
+        }
+
+        final isHost = room.host.uid == playerUid;
+        final isOpponent = room.opponent?.uid == playerUid;
+
+        if (!isHost && !isOpponent) {
+          throw Exception('User is not a member of this room.');
+        }
+
+        if (isHost && room.opponent != null && room.opponent!.color == newColor) {
+          throw Exception('${newColor.displayName} is already taken by your opponent.');
+        }
+        if (isOpponent && room.host.color == newColor) {
+          throw Exception('${newColor.displayName} is already taken by the host.');
+        }
+
+        final updatedHost = isHost ? room.host.copyWith(color: newColor) : room.host;
+        final updatedOpponent = isOpponent ? room.opponent?.copyWith(color: newColor) : room.opponent;
+
+        final active = [
+          updatedHost.color,
+          if (updatedOpponent != null) updatedOpponent.color,
+        ];
+        final updatedEngine = LudoEngine.newGame(
+          activePlayers: active,
+          initialTurn: updatedHost.color,
+        );
+
+        tx.update(docRef, {
+          'host': updatedHost.toMap(),
+          if (updatedOpponent != null) 'opponent': updatedOpponent.toMap(),
+          'engine': updatedEngine.toMap(),
+          'lastActive': DateTime.now().millisecondsSinceEpoch,
+        });
+      });
+      return;
+    }
+
+    // Mock execution
+    final room = _mockRooms[code];
+    if (room != null) {
+      if (room.status == GameStatus.inProgress) {
+        throw Exception('Cannot change color once match has started.');
+      }
+      final isHost = room.host.uid == playerUid;
+      final isOpponent = room.opponent?.uid == playerUid;
+
+      if (isHost && room.opponent?.color == newColor) {
+        throw Exception('${newColor.displayName} is already taken.');
+      }
+      if (isOpponent && room.host.color == newColor) {
+        throw Exception('${newColor.displayName} is already taken.');
+      }
+
+      final updatedHost = isHost ? room.host.copyWith(color: newColor) : room.host;
+      final updatedOpponent = isOpponent ? room.opponent?.copyWith(color: newColor) : room.opponent;
+      final active = [
+        updatedHost.color,
+        if (updatedOpponent != null) updatedOpponent.color,
+      ];
+      final updatedRoom = RoomModel(
+        roomCode: code,
+        host: updatedHost,
+        opponent: updatedOpponent,
+        engine: LudoEngine.newGame(activePlayers: active, initialTurn: updatedHost.color),
+        status: room.status,
+        createdAt: room.createdAt,
+        lastActive: DateTime.now(),
+        playerCount: room.playerCount,
+        latestReaction: room.latestReaction,
+      );
+      _mockRooms[code] = updatedRoom;
+      _getMockController(code).add(updatedRoom);
+    }
+  }
+
+  /// Send an emoji reaction in realtime with anti-spam rate limiting.
+  Future<void> sendReaction({
+    required String roomCode,
+    required String playerUid,
+    required String playerName,
+    required PlayerColor playerColor,
+    required String emoji,
+  }) async {
+    final code = roomCode.trim().toUpperCase();
+    final reaction = GameReaction(
+      senderUid: playerUid,
+      senderName: playerName,
+      senderColor: playerColor,
+      emoji: emoji,
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+    );
+
+    if (FirebaseService().isFirebaseAvailable) {
+      try {
+        await _firestore!.collection('rooms').doc(code).update({
+          'latestReaction': reaction.toMap(),
+          'lastActive': DateTime.now().millisecondsSinceEpoch,
+        });
+      } catch (e) {
+        debugPrint('Firestore reaction send error: $e');
+      }
+      return;
+    }
+
+    final room = _mockRooms[code];
+    if (room != null) {
+      final updated = RoomModel(
+        roomCode: code,
+        host: room.host,
+        opponent: room.opponent,
+        engine: room.engine,
+        status: room.status,
+        createdAt: room.createdAt,
+        lastActive: DateTime.now(),
+        rematchRequestedBy: room.rematchRequestedBy,
+        playerCount: room.playerCount,
+        latestReaction: reaction,
+      );
+      _mockRooms[code] = updated;
+      _getMockController(code).add(updated);
     }
   }
 
@@ -375,6 +549,7 @@ class RoomService {
         status: GameStatus.inProgress,
         createdAt: room.createdAt,
         lastActive: DateTime.now(),
+        playerCount: room.playerCount,
       );
       _mockRooms[code] = updated;
       _getMockController(code).add(updated);
@@ -405,6 +580,7 @@ class RoomService {
         status: GameStatus.abandoned,
         createdAt: room.createdAt,
         lastActive: DateTime.now(),
+        playerCount: room.playerCount,
       );
       _mockRooms[code] = updated;
       _getMockController(code).add(updated);
