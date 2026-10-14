@@ -12,6 +12,7 @@ import 'package:duo_ludo/ui/widgets/board/ludo_board_widget.dart';
 import 'package:duo_ludo/ui/widgets/confetti_overlay.dart';
 import 'package:duo_ludo/ui/widgets/dialogs/game_dialogs.dart';
 import 'package:duo_ludo/ui/widgets/dice/dice_widget.dart';
+import 'package:duo_ludo/ui/screens/settings_screen.dart';
 import 'package:duo_ludo/ui/widgets/player_card_widget.dart';
 
 /// Full interactive game screen with player-relative dice layout,
@@ -380,8 +381,19 @@ class _GameScreenState extends State<GameScreen> {
           ),
           actions: [
             TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+              },
+              child: const Text('Open Settings',
+                  style: TextStyle(color: AppTheme.gold, fontWeight: FontWeight.bold)),
+            ),
+            TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('OK', style: TextStyle(color: AppTheme.gold)),
+              child:
+                  const Text('Dismiss', style: TextStyle(color: AppTheme.textMuted)),
             ),
           ],
         ),

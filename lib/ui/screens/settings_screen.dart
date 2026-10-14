@@ -15,6 +15,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _settingsService = SettingsService();
   final _soundManager = SoundManager();
   late TextEditingController _nameController;
+  late TextEditingController _agoraAppIdController;
 
   bool _sound = true;
   bool _haptics = true;
@@ -24,6 +25,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: _settingsService.nickname);
+    _agoraAppIdController =
+        TextEditingController(text: _settingsService.agoraAppId);
     _sound = _settingsService.soundEnabled;
     _haptics = _settingsService.hapticsEnabled;
     _bgm = _soundManager.isBgmEnabled;
@@ -32,6 +35,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _agoraAppIdController.dispose();
     super.dispose();
   }
 
@@ -43,6 +47,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SnackBar(content: Text('Nickname updated!')),
       );
     }
+  }
+
+  void _saveAgoraAppId() {
+    final appId = _agoraAppIdController.text.trim();
+    _settingsService.setAgoraAppId(appId);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Voice Chat App ID saved!')),
+    );
   }
 
   @override
@@ -158,6 +170,73 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _settingsService.setHapticsEnabled(val);
                       _soundManager.toggleHaptics(val);
                     },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+
+          // Voice Chat (Agora RTC) Card
+          Card(
+            color: AppTheme.surfaceCard,
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.mic, color: AppTheme.gold, size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        'LIVE VOICE CHAT (AGORA RTC)',
+                        style: TextStyle(
+                          color: AppTheme.gold,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Talk with friends during online matches. Get your free App ID from console.agora.io (10,000 free minutes/mo).',
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _agoraAppIdController,
+                          decoration: InputDecoration(
+                            labelText: 'Agora App ID',
+                            hintText: 'Paste App ID here...',
+                            hintStyle: TextStyle(
+                              color: Colors.white.withOpacity(0.3),
+                              fontSize: 13,
+                            ),
+                            filled: true,
+                            fillColor: AppTheme.surface,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onSubmitted: (_) => _saveAgoraAppId(),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 16),
+                        ),
+                        onPressed: _saveAgoraAppId,
+                        child: const Text('Save'),
+                      ),
+                    ],
                   ),
                 ],
               ),

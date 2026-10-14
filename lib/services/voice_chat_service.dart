@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'settings_service.dart';
 
 /// Connection state for in-game multiplayer voice chat.
 enum VoiceChatState {
@@ -33,7 +34,8 @@ class VoiceChatService {
   String? get currentRoomCode => _currentRoomCode;
 
   // App ID from environment (dart-define) or settings
-  static const String _envAppId = String.fromEnvironment('AGORA_APP_ID', defaultValue: '');
+  static const String _envAppId =
+      String.fromEnvironment('AGORA_APP_ID', defaultValue: '');
 
   final StreamController<VoiceChatState> _stateController =
       StreamController<VoiceChatState>.broadcast();
@@ -45,7 +47,13 @@ class VoiceChatService {
 
   Timer? _simulatedVoiceDetector;
 
-  bool get isVoiceConfigured => _envAppId.isNotEmpty;
+  String get effectiveAppId {
+    final fromSettings = SettingsService().agoraAppId;
+    if (fromSettings.isNotEmpty) return fromSettings;
+    return _envAppId;
+  }
+
+  bool get isVoiceConfigured => effectiveAppId.isNotEmpty;
 
   /// Connect to the room's private voice channel.
   Future<bool> joinVoiceChannel({
