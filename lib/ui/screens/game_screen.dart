@@ -8,19 +8,22 @@ import 'package:duo_ludo/services/firebase_service.dart';
 import 'package:duo_ludo/services/room_service.dart';
 import 'package:duo_ludo/ui/theme/app_theme.dart';
 import 'package:duo_ludo/ui/widgets/board/ludo_board_widget.dart';
+import 'package:duo_ludo/ui/widgets/confetti_overlay.dart';
 import 'package:duo_ludo/ui/widgets/dialogs/game_dialogs.dart';
 import 'package:duo_ludo/ui/widgets/dice/dice_widget.dart';
 import 'package:duo_ludo/ui/widgets/player_card_widget.dart';
 
-/// Active game screen supporting both Local Pass & Play and Online Multiplayer.
+/// Active game screen supporting 2-Player, 3-Player, 4-Player Local and Online Multiplayer.
 class GameScreen extends StatefulWidget {
   final String? roomCode; // null = Local mode
   final bool isHost;
+  final List<PlayerColor>? activePlayers;
 
   const GameScreen({
     super.key,
     this.roomCode,
     this.isHost = true,
+    this.activePlayers,
   });
 
   @override
@@ -40,10 +43,16 @@ class _GameScreenState extends State<GameScreen> {
   Timer? _countdownTimer;
   int _secondsRemaining = LudoConstants.turnTimeoutSeconds;
 
+  // Animation state
+  bool _isMoving = false;
+  LudoToken? _animatingToken;
+  bool _isGameWon = false;
+
   bool get isOnline => widget.roomCode != null;
   PlayerColor get myColor => widget.isHost ? PlayerColor.red : PlayerColor.green;
 
   bool get isMyTurn {
+    if (_isMoving) return false;
     if (!isOnline) return true; // Local mode: always allow turn player
     return _engine.currentTurn == myColor;
   }
@@ -51,7 +60,7 @@ class _GameScreenState extends State<GameScreen> {
   @override
   void initState() {
     super.initState();
-    _engine = LudoEngine.newGame();
+    _engine = LudoEngine.newGame(activePlayers: widget.activePlayers);
 
     if (isOnline) {
       _listenToRoom();
@@ -89,7 +98,6 @@ class _GameScreenState extends State<GameScreen> {
         if (_secondsRemaining > 0) {
           _secondsRemaining--;
         } else {
-          // Time expired
           _handleTurnTimeout();
         }
       });
@@ -98,15 +106,15 @@ class _GameScreenState extends State<GameScreen> {
 
   void _handleTurnTimeout() {
     _countdownTimer?.cancel();
-    if (_engine.status != GameStatus.inProgress) return;
+    if (_engine.status != GameStatus.inProgress || _isMoving) return;
 
     if (!isOnline) {
       setState(() {
         _engine.timeoutPassTurn();
       });
+      _soundManager.playTurnAlert();
       _startTurnTimer();
     } else if (isMyTurn) {
-      // For online match, if current turn player times out, pass turn
       _roomService.submitDiceRoll(
         roomCode: widget.roomCode!,
         playerUid: _firebaseService.currentUserId,
@@ -122,14 +130,14 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _onDiceRoll() {
-    if (!isMyTurn || _engine.turnPhase != TurnPhase.waitingForRoll) return;
+    if (!isMyTurn || _engine.turnPhase != TurnPhase.waitingForRoll || _isMoving) return;
 
     if (!isOnline) {
       setState(() {
         _engine.rollDice();
       });
       _startTurnTimer();
-      _checkLocalGameStatus();
+      _checkGameStatus();
     } else {
       _roomService.submitDiceRoll(
         roomCode: widget.roomCode!,
@@ -143,15 +151,24 @@ class _GameScreenState extends State<GameScreen> {
     }
   }
 
-  void _onTokenTapped(int tokenId) {
-    if (!isMyTurn || _engine.turnPhase != TurnPhase.waitingForMove) return;
+  Future<void> _onTokenTapped(int tokenId) async {
+    if (!isMyTurn || _engine.turnPhase != TurnPhase.waitingForMove || _isMoving) return;
 
     if (!isOnline) {
+      final currentToken = _engine.getToken(_engine.currentTurn, tokenId);
+      final fromStep = currentToken.stepCount;
+      final roll = _engine.currentDiceRoll!;
+      final targetStep = fromStep == LudoConstants.stepYard ? 0 : fromStep + roll;
+
       final res = _engine.moveToken(tokenId);
-      _handleLocalMoveFeedback(res);
-      setState(() {});
-      _startTurnTimer();
-      _checkLocalGameStatus();
+
+      // Smooth step-by-step movement along individual board cells
+      await _animateTokenStepByStep(
+        token: currentToken,
+        fromStep: fromStep,
+        toStep: targetStep,
+        res: res,
+      );
     } else {
       _roomService.submitMove(
         roomCode: widget.roomCode!,
@@ -166,28 +183,70 @@ class _GameScreenState extends State<GameScreen> {
     }
   }
 
-  void _handleLocalMoveFeedback(MoveResult res) {
+  Future<void> _animateTokenStepByStep({
+    required LudoToken token,
+    required int fromStep,
+    required int toStep,
+    required MoveResult res,
+  }) async {
+    setState(() => _isMoving = true);
+    _countdownTimer?.cancel();
+
+    if (fromStep == LudoConstants.stepYard) {
+      setState(() {
+        _animatingToken = token.copyWith(stepCount: 0);
+      });
+      _soundManager.playTokenMove();
+      await Future.delayed(const Duration(milliseconds: 200));
+    } else {
+      for (int step = fromStep + 1; step <= toStep; step++) {
+        if (!mounted) break;
+        setState(() {
+          _animatingToken = token.copyWith(stepCount: step);
+        });
+        _soundManager.playTokenMove();
+        await Future.delayed(const Duration(milliseconds: 110));
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _animatingToken = null;
+      _isMoving = false;
+    });
+
+    _handlePostMoveFeedback(res);
+    _startTurnTimer();
+    _checkGameStatus();
+  }
+
+  void _handlePostMoveFeedback(MoveResult res) {
     if (res.capturedToken != null) {
       _soundManager.playCapture();
-    } else {
-      _soundManager.playTokenMove();
+    } else if (res.toStep == LudoConstants.stepHomeFinished) {
+      _soundManager.playTokenHome();
     }
 
     if (res.gameWon) {
+      setState(() => _isGameWon = true);
       _soundManager.playVictory();
       _showGameOverModal(_engine.winner!);
+    } else if (!res.extraTurnGranted) {
+      _soundManager.playTurnAlert();
     }
   }
 
-  void _checkLocalGameStatus() {
+  void _checkGameStatus() {
     if (_engine.status == GameStatus.completed && _engine.winner != null) {
+      setState(() => _isGameWon = true);
       _soundManager.playVictory();
       _showGameOverModal(_engine.winner!);
     }
   }
 
   void _showGameOverModal(PlayerColor winner) {
-    final isMe = (!isOnline && winner == PlayerColor.red) || (isOnline && winner == myColor);
+    final isMe = (!isOnline && winner == _engine.activePlayers.first) ||
+        (isOnline && winner == myColor);
 
     GameDialogs.showVictoryDialog(
       context: context,
@@ -196,10 +255,12 @@ class _GameScreenState extends State<GameScreen> {
       onRematch: () {
         if (!isOnline) {
           setState(() {
-            _engine = LudoEngine.newGame();
+            _isGameWon = false;
+            _engine = LudoEngine.newGame(activePlayers: widget.activePlayers);
           });
           _startTurnTimer();
         } else {
+          setState(() => _isGameWon = false);
           _roomService.requestRematch(widget.roomCode!);
         }
       },
@@ -224,36 +285,13 @@ class _GameScreenState extends State<GameScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final redTokens = _engine.getTokensFor(PlayerColor.red);
-    final greenTokens = _engine.getTokensFor(PlayerColor.green);
+    final activePlayers = _engine.activePlayers;
     final legalMoves = isMyTurn ? _engine.getLegalMoves() : <int>[];
-
-    final hostPlayer = _onlineRoom?.host ??
-        PlayerProfile(
-          uid: 'p1',
-          displayName: isOnline ? 'Host' : 'Player 1 (Red)',
-          color: PlayerColor.red,
-        );
-
-    final guestPlayer = _onlineRoom?.opponent ??
-        PlayerProfile(
-          uid: 'p2',
-          displayName: isOnline ? 'Opponent' : 'Player 2 (Green)',
-          color: PlayerColor.green,
-        );
-
-    // In online mode, top card is opponent and bottom card is me
-    final topPlayer = isOnline
-        ? (widget.isHost ? guestPlayer : hostPlayer)
-        : hostPlayer;
-
-    final bottomPlayer = isOnline
-        ? (widget.isHost ? hostPlayer : guestPlayer)
-        : guestPlayer;
 
     final canRoll = isMyTurn &&
         _engine.turnPhase == TurnPhase.waitingForRoll &&
-        _engine.status == GameStatus.inProgress;
+        _engine.status == GameStatus.inProgress &&
+        !_isMoving;
 
     final lastLog = _engine.moveLog.isNotEmpty ? _engine.moveLog.last : 'Match in progress';
 
@@ -264,142 +302,212 @@ class _GameScreenState extends State<GameScreen> {
           _handleLeave();
         }
       },
-      child: Scaffold(
-        backgroundColor: AppTheme.background,
-        appBar: AppBar(
-          title: Text(isOnline ? 'Room: ${widget.roomCode}' : 'Pass & Play'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.exit_to_app_rounded, color: AppTheme.redLight),
-              tooltip: 'Leave Game',
-              onPressed: _handleLeave,
+      child: ConfettiOverlay(
+        isPlaying: _isGameWon,
+        child: Scaffold(
+          backgroundColor: AppTheme.background,
+          appBar: AppBar(
+            title: Text(
+              isOnline
+                  ? 'Room: ${widget.roomCode}'
+                  : '${activePlayers.length}-Player Pass & Play',
             ),
-          ],
-        ),
-        body: SafeArea(
-          child: Column(
-            children: [
-              // 1. Top Player Card (Opponent in online mode)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    PlayerCardWidget(
-                      player: topPlayer,
-                      isCurrentTurn: _engine.currentTurn == topPlayer.color,
-                      finishedTokens: _engine.getFinishedCount(topPlayer.color),
-                      remainingSeconds: _secondsRemaining,
-                      isMe: isOnline ? topPlayer.color == myColor : false,
-                    ),
-                    if (isOnline)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: AppTheme.surfaceCard,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.white10),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.wifi,
-                              color: topPlayer.isConnected
-                                  ? const Color(0xFF10B981)
-                                  : const Color(0xFFEF4444),
-                              size: 16,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              topPlayer.isConnected ? 'ONLINE' : 'AWAY',
-                              style: TextStyle(
-                                color: topPlayer.isConnected
-                                    ? const Color(0xFF10B981)
-                                    : const Color(0xFFEF4444),
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
+            actions: [
+              // BGM Toggle button
+              IconButton(
+                icon: Icon(
+                  _soundManager.isBgmEnabled ? Icons.music_note : Icons.music_off,
+                  color: _soundManager.isBgmEnabled ? AppTheme.gold : AppTheme.textMuted,
                 ),
+                tooltip: 'Toggle Music',
+                onPressed: () {
+                  setState(() {
+                    _soundManager.toggleBgm(!_soundManager.isBgmEnabled);
+                  });
+                },
               ),
-
-              // 2. Center Board View
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: LudoBoardWidget(
-                    redTokens: redTokens,
-                    greenTokens: greenTokens,
-                    currentTurn: _engine.currentTurn,
-                    legalMoveTokenIds: legalMoves,
-                    isInteractive: isMyTurn,
-                    onTokenTapped: _onTokenTapped,
-                  ),
-                ),
-              ),
-
-              // 3. Move Ticker Announcement Bar
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppTheme.surface.withOpacity(0.85),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withOpacity(0.08)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.campaign_outlined, color: AppTheme.gold, size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        lastLog,
-                        style: const TextStyle(
-                          color: AppTheme.textLight,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // 4. Bottom Controls: Dice and My Player Card
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    PlayerCardWidget(
-                      player: bottomPlayer,
-                      isCurrentTurn: _engine.currentTurn == bottomPlayer.color,
-                      finishedTokens: _engine.getFinishedCount(bottomPlayer.color),
-                      remainingSeconds: _secondsRemaining,
-                      isMe: isOnline ? bottomPlayer.color == myColor : true,
-                    ),
-
-                    // Dice Action Widget
-                    DiceWidget(
-                      value: _engine.currentDiceRoll ?? _engine.lastDiceRoll,
-                      canRoll: canRoll,
-                      turnColor: _engine.currentTurn,
-                      onRoll: _onDiceRoll,
-                      size: 68,
-                    ),
-                  ],
-                ),
+              IconButton(
+                icon: const Icon(Icons.exit_to_app_rounded, color: AppTheme.redLight),
+                tooltip: 'Leave Game',
+                onPressed: _handleLeave,
               ),
             ],
           ),
+          body: SafeArea(
+            child: Column(
+              children: [
+                // 1. Top Player Panels Section
+                _buildTopPlayerSection(),
+
+                // 2. Center Classic Ludo Board View
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    child: LudoBoardWidget(
+                      tokens: _engine.tokens,
+                      activePlayers: activePlayers,
+                      currentTurn: _engine.currentTurn,
+                      legalMoveTokenIds: legalMoves,
+                      isInteractive: isMyTurn && !_isMoving,
+                      animatingToken: _animatingToken,
+                      onTokenTapped: _onTokenTapped,
+                    ),
+                  ),
+                ),
+
+                // 3. Move Ticker Announcement Bar
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: _engine.currentTurn.primaryColor.withOpacity(0.4),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.campaign_outlined,
+                          color: _engine.currentTurn.primaryColor, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          lastLog,
+                          style: const TextStyle(
+                            color: AppTheme.textLight,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // 4. Bottom Controls: Dice and Current Turn Player Card
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Active Turn Player Card
+                      PlayerCardWidget(
+                        player: PlayerProfile(
+                          uid: 'current',
+                          displayName: isOnline && _onlineRoom != null
+                              ? (_engine.currentTurn == myColor
+                                  ? (widget.isHost ? _onlineRoom!.host.displayName : _onlineRoom!.opponent?.displayName ?? 'You')
+                                  : (widget.isHost ? _onlineRoom!.opponent?.displayName ?? 'Opponent' : _onlineRoom!.host.displayName))
+                              : '${_engine.currentTurn.displayName} Turn',
+                          color: _engine.currentTurn,
+                        ),
+                        isCurrentTurn: true,
+                        finishedTokens: _engine.getFinishedCount(_engine.currentTurn),
+                        remainingSeconds: _secondsRemaining,
+                        isMe: isOnline ? _engine.currentTurn == myColor : true,
+                      ),
+
+                      // Animated 3D Dice Widget
+                      DiceWidget(
+                        value: _engine.currentDiceRoll ?? _engine.lastDiceRoll,
+                        canRoll: canRoll,
+                        turnColor: _engine.currentTurn,
+                        onRoll: _onDiceRoll,
+                        size: 64,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildTopPlayerSection() {
+    final activePlayers = _engine.activePlayers;
+
+    // In 2-player mode, show the opponent at the top
+    if (activePlayers.length == 2) {
+      final opponentColor = activePlayers.firstWhere(
+        (c) => c != _engine.currentTurn,
+        orElse: () => activePlayers.last,
+      );
+
+      final oppProfile = (isOnline && _onlineRoom != null)
+          ? ((widget.isHost ? _onlineRoom!.opponent : _onlineRoom!.host) ??
+              PlayerProfile(
+                uid: 'opp',
+                displayName: '${opponentColor.displayName} Team',
+                color: opponentColor,
+              ))
+          : PlayerProfile(
+              uid: 'opp',
+              displayName: '${opponentColor.displayName} Team',
+              color: opponentColor,
+            );
+
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            PlayerCardWidget(
+              player: oppProfile,
+              isCurrentTurn: _engine.currentTurn == opponentColor,
+              finishedTokens: _engine.getFinishedCount(opponentColor),
+              remainingSeconds: _secondsRemaining,
+              isMe: false,
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: opponentColor.primaryColor.withOpacity(0.18),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: opponentColor.primaryColor.withOpacity(0.4)),
+              ),
+              child: Text(
+                'OPPONENT',
+                style: TextStyle(
+                  color: opponentColor.primaryColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 10,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // In 3-player or 4-player mode, show horizontal list of other active players
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      child: Row(
+        children: [
+          for (final color in activePlayers)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: PlayerCardWidget(
+                player: PlayerProfile(
+                  uid: color.name,
+                  displayName: color.displayName,
+                  color: color,
+                ),
+                isCurrentTurn: _engine.currentTurn == color,
+                finishedTokens: _engine.getFinishedCount(color),
+                remainingSeconds: _secondsRemaining,
+                isMe: _engine.currentTurn == color,
+              ),
+            ),
+        ],
       ),
     );
   }

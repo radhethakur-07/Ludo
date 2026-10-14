@@ -18,6 +18,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   bool _sound = true;
   bool _haptics = true;
+  bool _bgm = false;
 
   @override
   void initState() {
@@ -25,6 +26,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _nameController = TextEditingController(text: _settingsService.nickname);
     _sound = _settingsService.soundEnabled;
     _haptics = _settingsService.hapticsEnabled;
+    _bgm = _soundManager.isBgmEnabled;
   }
 
   @override
@@ -132,6 +134,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       setState(() => _sound = val);
                       _settingsService.setSoundEnabled(val);
                       _soundManager.toggleSound(val);
+                    },
+                  ),
+                  const Divider(color: Colors.white12),
+                  SwitchListTile(
+                    title: const Text('Background Music'),
+                    subtitle: const Text('Calming ambient game music'),
+                    value: _bgm,
+                    activeColor: AppTheme.gold,
+                    onChanged: (val) {
+                      setState(() => _bgm = val);
+                      _soundManager.toggleBgm(val);
                     },
                   ),
                   const Divider(color: Colors.white12),

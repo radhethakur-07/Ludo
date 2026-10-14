@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:duo_ludo/engine/ludo_models.dart';
 import 'package:duo_ludo/ui/theme/app_theme.dart';
 
-/// Player status card displaying nickname, turn indicator, connection status, and score.
+/// Player status card displaying nickname, turn indicator, connection status, and score for all 4 colors.
 class PlayerCardWidget extends StatelessWidget {
   final PlayerProfile player;
   final bool isCurrentTurn;
@@ -21,19 +21,17 @@ class PlayerCardWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isRed = player.color == PlayerColor.red;
-    final primaryColor = isRed ? AppTheme.redPrimary : AppTheme.greenPrimary;
-    final secondaryColor =
-        isRed ? AppTheme.redSecondary : AppTheme.greenSecondary;
+    final primaryColor = player.color.primaryColor;
+    final darkColor = player.color.darkColor;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: isCurrentTurn
             ? AppTheme.surfaceCard
             : AppTheme.surface.withOpacity(0.7),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isCurrentTurn ? primaryColor : Colors.white.withOpacity(0.1),
           width: isCurrentTurn ? 2.2 : 1,
@@ -42,7 +40,7 @@ class PlayerCardWidget extends StatelessWidget {
           if (isCurrentTurn)
             BoxShadow(
               color: primaryColor.withOpacity(0.35),
-              blurRadius: 12,
+              blurRadius: 10,
               spreadRadius: 1,
             ),
         ],
@@ -52,19 +50,19 @@ class PlayerCardWidget extends StatelessWidget {
         children: [
           // Player Avatar Circle
           Container(
-            width: 44,
-            height: 44,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: LinearGradient(
-                colors: [primaryColor, secondaryColor],
+                colors: [primaryColor, darkColor],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               boxShadow: [
                 BoxShadow(
                   color: primaryColor.withOpacity(0.4),
-                  blurRadius: 6,
+                  blurRadius: 5,
                   offset: const Offset(0, 2),
                 ),
               ],
@@ -75,28 +73,28 @@ class PlayerCardWidget extends StatelessWidget {
                 Icon(
                   Icons.person,
                   color: Colors.white.withOpacity(0.9),
-                  size: 26,
+                  size: 22,
                 ),
                 // Connection indicator dot
                 Positioned(
                   right: 1,
                   bottom: 1,
                   child: Container(
-                    width: 11,
-                    height: 11,
+                    width: 9,
+                    height: 9,
                     decoration: BoxDecoration(
                       color: player.isConnected
                           ? const Color(0xFF10B981)
                           : const Color(0xFFEF4444),
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 1.5),
+                      border: Border.all(color: Colors.white, width: 1.2),
                     ),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
 
           // Player Name & Status
           Column(
@@ -106,46 +104,49 @@ class PlayerCardWidget extends StatelessWidget {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    player.displayName,
-                    style: TextStyle(
-                      color: AppTheme.textLight,
-                      fontWeight:
-                          isCurrentTurn ? FontWeight.bold : FontWeight.w600,
-                      fontSize: 14,
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 80),
+                    child: Text(
+                      player.displayName,
+                      style: TextStyle(
+                        color: AppTheme.textLight,
+                        fontWeight:
+                            isCurrentTurn ? FontWeight.bold : FontWeight.w600,
+                        fontSize: 12.5,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
                   if (isMe)
                     Container(
-                      margin: const EdgeInsets.only(left: 6),
+                      margin: const EdgeInsets.only(left: 4),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 1.5),
+                          horizontal: 4, vertical: 1),
                       decoration: BoxDecoration(
-                        color: primaryColor.withOpacity(0.25),
-                        borderRadius: BorderRadius.circular(6),
+                        color: primaryColor.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(4),
                       ),
                       child: const Text(
                         'YOU',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 9,
+                          fontSize: 8,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
                 ],
               ),
-              const SizedBox(height: 3),
+              const SizedBox(height: 2),
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Finished tokens score
+                  // Finished tokens score dots
                   for (int i = 0; i < 4; i++)
                     Container(
-                      margin: const EdgeInsets.only(right: 3),
-                      width: 8,
-                      height: 8,
+                      margin: const EdgeInsets.only(right: 2.5),
+                      width: 6.5,
+                      height: 6.5,
                       decoration: BoxDecoration(
                         color: i < finishedTokens
                             ? primaryColor
@@ -153,13 +154,13 @@ class PlayerCardWidget extends StatelessWidget {
                         shape: BoxShape.circle,
                       ),
                     ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 3),
                   Text(
-                    '$finishedTokens/4 Home',
+                    '$finishedTokens/4',
                     style: const TextStyle(
                       color: AppTheme.textMuted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
@@ -167,14 +168,14 @@ class PlayerCardWidget extends StatelessWidget {
             ],
           ),
 
-          // Turn countdown ring if it's current turn
+          // Turn countdown badge if it's current turn
           if (isCurrentTurn) ...[
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               decoration: BoxDecoration(
                 color: primaryColor.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: primaryColor.withOpacity(0.5),
                   width: 1,
@@ -185,7 +186,7 @@ class PlayerCardWidget extends StatelessWidget {
                 style: TextStyle(
                   color: primaryColor,
                   fontWeight: FontWeight.bold,
-                  fontSize: 12,
+                  fontSize: 11,
                 ),
               ),
             ),

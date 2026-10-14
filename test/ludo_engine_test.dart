@@ -11,14 +11,14 @@ void main() {
       engine = LudoEngine.newGame();
     });
 
-    test('Initial game state is valid', () {
+    test('Initial game state is valid for all colors', () {
       expect(engine.currentTurn, PlayerColor.red);
       expect(engine.turnPhase, TurnPhase.waitingForRoll);
       expect(engine.status, GameStatus.inProgress);
       expect(engine.winner, isNull);
       expect(engine.consecutiveSixes, 0);
 
-      // All tokens must start in Yard
+      // All 4 colors must have 4 tokens starting in Yard
       for (final color in PlayerColor.values) {
         final tokens = engine.getTokensFor(color);
         expect(tokens.length, 4);
@@ -93,8 +93,9 @@ void main() {
     test('Safe squares protect opponent token from capture', () {
       // Set up:
       // Red token 0 at step 8 (safe star at tile 8)
-      // Green token 0 at track tile 8 (from Green start 26, step 34 is track tile (26+34)%52 = 8)
+      // Green token 0 at track tile 8 (from Green start 13, step 47 is track tile (13+47)%52 = 8)
       final customEngine = LudoEngine(
+        activePlayers: [PlayerColor.red, PlayerColor.green],
         initialTurn: PlayerColor.green,
         initialTokens: {
           PlayerColor.red: [
@@ -104,7 +105,7 @@ void main() {
             const LudoToken(id: 3, owner: PlayerColor.red),
           ],
           PlayerColor.green: [
-            const LudoToken(id: 0, owner: PlayerColor.green, stepCount: 30), // tile (26+30)%52 = 4
+            const LudoToken(id: 0, owner: PlayerColor.green, stepCount: 43), // tile (13+43)%52 = 4
             const LudoToken(id: 1, owner: PlayerColor.green),
             const LudoToken(id: 2, owner: PlayerColor.green),
             const LudoToken(id: 3, owner: PlayerColor.green),
@@ -112,7 +113,7 @@ void main() {
         },
       );
 
-      // Green rolls 4 -> step 34 -> tile (26+34)%52 = 8
+      // Green rolls 4 -> step 47 -> tile (13+47)%52 = 8
       customEngine.rollDice(fixedRoll: 4);
       final result = customEngine.moveToken(0);
 
@@ -124,9 +125,10 @@ void main() {
     test('Capturing an opponent sends them to yard and awards an extra turn', () {
       // Set up:
       // Red token 0 at step 5 (tile 5, not safe)
-      // Green token 0 at step 27 (tile (26+27)%52 = 1, not safe)
-      // Green rolls 4 -> step 31 -> tile (26+31)%52 = 5 (lands on Red!)
+      // Green token 0 at step 40 (tile (13+40)%52 = 1, not safe)
+      // Green rolls 4 -> step 44 -> tile (13+44)%52 = 5 (lands on Red!)
       final customEngine = LudoEngine(
+        activePlayers: [PlayerColor.red, PlayerColor.green],
         initialTurn: PlayerColor.green,
         initialTokens: {
           PlayerColor.red: [
@@ -136,7 +138,7 @@ void main() {
             const LudoToken(id: 3, owner: PlayerColor.red),
           ],
           PlayerColor.green: [
-            const LudoToken(id: 0, owner: PlayerColor.green, stepCount: 27),
+            const LudoToken(id: 0, owner: PlayerColor.green, stepCount: 40),
             const LudoToken(id: 1, owner: PlayerColor.green),
             const LudoToken(id: 2, owner: PlayerColor.green),
             const LudoToken(id: 3, owner: PlayerColor.green),
@@ -215,7 +217,57 @@ void main() {
       expect(customEngine.hasPlayerWon(PlayerColor.red), isTrue);
     });
 
-    test('State serialization (toMap and fromMap) faithfully round-trips game state', () {
+    test('Four-player rotation cycles through Red -> Green -> Yellow -> Blue -> Red', () {
+      final fourPlayerEngine = LudoEngine.newGame(
+        activePlayers: [
+          PlayerColor.red,
+          PlayerColor.green,
+          PlayerColor.yellow,
+          PlayerColor.blue,
+        ],
+      );
+
+      expect(fourPlayerEngine.currentTurn, PlayerColor.red);
+
+      // Red rolls 2 (no moves in yard -> passes)
+      fourPlayerEngine.rollDice(fixedRoll: 2);
+      expect(fourPlayerEngine.currentTurn, PlayerColor.green);
+
+      // Green rolls 3 -> passes
+      fourPlayerEngine.rollDice(fixedRoll: 3);
+      expect(fourPlayerEngine.currentTurn, PlayerColor.yellow);
+
+      // Yellow rolls 4 -> passes
+      fourPlayerEngine.rollDice(fixedRoll: 4);
+      expect(fourPlayerEngine.currentTurn, PlayerColor.blue);
+
+      // Blue rolls 5 -> passes back to Red
+      fourPlayerEngine.rollDice(fixedRoll: 5);
+      expect(fourPlayerEngine.currentTurn, PlayerColor.red);
+    });
+
+    test('Three-player rotation cycles through Red -> Green -> Yellow -> Red', () {
+      final threePlayerEngine = LudoEngine.newGame(
+        activePlayers: [
+          PlayerColor.red,
+          PlayerColor.green,
+          PlayerColor.yellow,
+        ],
+      );
+
+      expect(threePlayerEngine.currentTurn, PlayerColor.red);
+
+      threePlayerEngine.rollDice(fixedRoll: 1);
+      expect(threePlayerEngine.currentTurn, PlayerColor.green);
+
+      threePlayerEngine.rollDice(fixedRoll: 2);
+      expect(threePlayerEngine.currentTurn, PlayerColor.yellow);
+
+      threePlayerEngine.rollDice(fixedRoll: 3);
+      expect(threePlayerEngine.currentTurn, PlayerColor.red);
+    });
+
+    test('State serialization (toMap and fromMap) faithfully round-trips 4-player game state', () {
       engine.rollDice(fixedRoll: 6);
       engine.moveToken(0);
       engine.rollDice(fixedRoll: 5);
@@ -227,9 +279,11 @@ void main() {
       expect(restored.currentTurn, engine.currentTurn);
       expect(restored.turnPhase, engine.turnPhase);
       expect(restored.currentDiceRoll, engine.currentDiceRoll);
+      expect(restored.lastDiceRoll, engine.lastDiceRoll);
       expect(restored.consecutiveSixes, engine.consecutiveSixes);
       expect(restored.status, engine.status);
       expect(restored.getToken(PlayerColor.red, 0).stepCount, 5);
+      expect(restored.activePlayers, engine.activePlayers);
     });
   });
 }

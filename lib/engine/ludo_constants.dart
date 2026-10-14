@@ -1,4 +1,4 @@
-/// Ludo board constants and coordinate definitions.
+/// Ludo board constants and coordinate definitions for classic 4-color board.
 class LudoConstants {
   /// Total squares on the outer perimeter circuit.
   static const int circuitLength = 52;
@@ -7,9 +7,15 @@ class LudoConstants {
   static const int tokensPerPlayer = 4;
 
   /// Starting tile indices on the common perimeter for each player color.
-  /// Red starts at 0, Green starts at 26 (directly opposite).
+  /// Standard classic layout:
+  /// - Red (Top-Left): 0
+  /// - Green (Top-Right): 13
+  /// - Yellow (Bottom-Right): 26
+  /// - Blue (Bottom-Left): 39
   static const int redStartTile = 0;
-  static const int greenStartTile = 26;
+  static const int greenStartTile = 13;
+  static const int yellowStartTile = 26;
+  static const int blueStartTile = 39;
 
   /// Steps from yard:
   /// step -1: in yard
@@ -23,17 +29,17 @@ class LudoConstants {
   static const int stepHomeFinished = 56;
 
   /// Safe perimeter tiles where tokens cannot be captured:
-  /// - Starting spawn squares: 0 (Red), 26 (Green)
-  /// - Classic Star squares: 8, 21, 34, 47 (or 0, 8, 13, 21, 26, 34, 39, 47)
+  /// - 4 Starting spawn squares: 0 (Red), 13 (Green), 26 (Yellow), 39 (Blue)
+  /// - 4 Classic Star squares: 8, 21, 34, 47
   static const Set<int> safeTiles = {
     0,   // Red start
-    8,   // Star 1
-    13,  // Blue start / Star
-    21,  // Star 2
-    26,  // Green start
-    34,  // Star 3
-    39,  // Yellow start / Star
-    47,  // Star 4
+    8,   // Star 1 (Red side)
+    13,  // Green start
+    21,  // Star 2 (Green side)
+    26,  // Yellow start
+    34,  // Star 3 (Yellow side)
+    39,  // Blue start
+    47,  // Star 4 (Blue side)
   };
 
   /// Maximum consecutive sixes allowed before turn is forfeited.

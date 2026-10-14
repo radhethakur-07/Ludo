@@ -1,9 +1,12 @@
+import 'package:flutter/material.dart';
 import 'ludo_constants.dart';
 
-/// Supported player colors for two-player Duo Ludo.
+/// Supported player colors for classic Ludo.
 enum PlayerColor {
   red,
-  green;
+  green,
+  yellow,
+  blue;
 
   int get startTile {
     switch (this) {
@@ -11,6 +14,10 @@ enum PlayerColor {
         return LudoConstants.redStartTile;
       case PlayerColor.green:
         return LudoConstants.greenStartTile;
+      case PlayerColor.yellow:
+        return LudoConstants.yellowStartTile;
+      case PlayerColor.blue:
+        return LudoConstants.blueStartTile;
     }
   }
 
@@ -20,11 +27,63 @@ enum PlayerColor {
         return 'Red';
       case PlayerColor.green:
         return 'Green';
+      case PlayerColor.yellow:
+        return 'Yellow';
+      case PlayerColor.blue:
+        return 'Blue';
+    }
+  }
+
+  Color get primaryColor {
+    switch (this) {
+      case PlayerColor.red:
+        return const Color(0xFFE53935); // Classic Vibrant Red
+      case PlayerColor.green:
+        return const Color(0xFF1E8E3E); // Classic Vibrant Green
+      case PlayerColor.yellow:
+        return const Color(0xFFF9A825); // Classic Rich Golden Yellow
+      case PlayerColor.blue:
+        return const Color(0xFF1976D2); // Classic Vibrant Blue
+    }
+  }
+
+  Color get lightColor {
+    switch (this) {
+      case PlayerColor.red:
+        return const Color(0xFFFF8A80);
+      case PlayerColor.green:
+        return const Color(0xFFA5D6A7);
+      case PlayerColor.yellow:
+        return const Color(0xFFFFF59D);
+      case PlayerColor.blue:
+        return const Color(0xFF90CAF9);
+    }
+  }
+
+  Color get darkColor {
+    switch (this) {
+      case PlayerColor.red:
+        return const Color(0xFFB71C1C);
+      case PlayerColor.green:
+        return const Color(0xFF0D5324);
+      case PlayerColor.yellow:
+        return const Color(0xFFF57F17);
+      case PlayerColor.blue:
+        return const Color(0xFF0D47A1);
     }
   }
 
   PlayerColor get opposite {
-    return this == PlayerColor.red ? PlayerColor.green : PlayerColor.red;
+    switch (this) {
+      case PlayerColor.red:
+        return PlayerColor.yellow;
+      case PlayerColor.green:
+        return PlayerColor.blue;
+      case PlayerColor.yellow:
+        return PlayerColor.red;
+      case PlayerColor.blue:
+        return PlayerColor.green;
+    }
   }
 }
 

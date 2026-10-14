@@ -2,7 +2,6 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:duo_ludo/audio/sound_manager.dart';
 import 'package:duo_ludo/engine/ludo_models.dart';
-import 'package:duo_ludo/ui/theme/app_theme.dart';
 
 /// Animated 3D dice widget with realistic roll rotation and pip faces.
 class DiceWidget extends StatefulWidget {
@@ -76,6 +75,7 @@ class _DiceWidgetState extends State<DiceWidget>
 
     SoundManager().playDiceRoll();
     _rollAnimController.forward(from: 0.0).then((_) {
+      SoundManager().playDiceLand();
       if (widget.onRoll != null) {
         widget.onRoll!();
       }
@@ -84,9 +84,7 @@ class _DiceWidgetState extends State<DiceWidget>
 
   @override
   Widget build(BuildContext context) {
-    final playerColor = widget.turnColor == PlayerColor.red
-        ? AppTheme.redPrimary
-        : AppTheme.greenPrimary;
+    final playerColor = widget.turnColor.primaryColor;
 
     return GestureDetector(
       onTap: widget.canRoll ? _handleTap : null,

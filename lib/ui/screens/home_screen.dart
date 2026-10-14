@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:duo_ludo/engine/ludo_models.dart';
 import 'package:duo_ludo/services/firebase_service.dart';
 import 'package:duo_ludo/services/room_service.dart';
 import 'package:duo_ludo/services/settings_service.dart';
@@ -98,11 +99,157 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _startLocalGame() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const GameScreen(
-          roomCode: null,
-          isHost: true,
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surfaceCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text(
+          'Select Players',
+          style: TextStyle(
+            color: AppTheme.textLight,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildPlayerCountOption(
+              title: '2 Players',
+              subtitle: 'Red vs Yellow (Classic Opposite)',
+              colors: [PlayerColor.red, PlayerColor.yellow],
+              onTap: () {
+                Navigator.of(ctx).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const GameScreen(
+                      roomCode: null,
+                      isHost: true,
+                      activePlayers: [PlayerColor.red, PlayerColor.yellow],
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildPlayerCountOption(
+              title: '3 Players',
+              subtitle: 'Red, Green & Yellow',
+              colors: [PlayerColor.red, PlayerColor.green, PlayerColor.yellow],
+              onTap: () {
+                Navigator.of(ctx).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const GameScreen(
+                      roomCode: null,
+                      isHost: true,
+                      activePlayers: [
+                        PlayerColor.red,
+                        PlayerColor.green,
+                        PlayerColor.yellow,
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildPlayerCountOption(
+              title: '4 Players',
+              subtitle: 'Full Board (Red, Green, Yellow, Blue)',
+              colors: [
+                PlayerColor.red,
+                PlayerColor.green,
+                PlayerColor.yellow,
+                PlayerColor.blue,
+              ],
+              onTap: () {
+                Navigator.of(ctx).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const GameScreen(
+                      roomCode: null,
+                      isHost: true,
+                      activePlayers: [
+                        PlayerColor.red,
+                        PlayerColor.green,
+                        PlayerColor.yellow,
+                        PlayerColor.blue,
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlayerCountOption({
+    required String title,
+    required String subtitle,
+    required List<PlayerColor> colors,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withOpacity(0.12)),
+        ),
+        child: Row(
+          children: [
+            Row(
+              children: [
+                for (final c in colors)
+                  Container(
+                    margin: const EdgeInsets.only(right: 4),
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: c.primaryColor,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.2),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: AppTheme.textLight,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: AppTheme.textMuted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: AppTheme.textMuted,
+            ),
+          ],
         ),
       ),
     );
